@@ -5,15 +5,6 @@ import heapq
 from optparse import OptionParser
 from multiprocessing import Pool
 
-try:
-    _create_unverified_https_context = ssl._create_unverified_context
-except AttributeError:
-    # Legacy Python that doesn't verify HTTPS certificates by default
-    pass
-else:
-    # Handle target environment that doesn't support HTTPS verification
-    ssl._create_default_https_context = _create_unverified_https_context
-
 class SampleTreeNode:
     def __init__(self, name, parent=None):
         self.parent = parent
@@ -148,6 +139,16 @@ def do_it(opts, args):
                    "password" : opts.password,
                    "cluster" : opts.cluster}
 
+    if opts.connect_to_self_signed_servers:
+        try:
+            _create_unverified_https_context = ssl._create_unverified_context
+        except AttributeError:
+            # Legacy Python that doesn't verify HTTPS certificates by default
+            pass
+        else:
+            # Handle target environment that doesn't support HTTPS verification
+            ssl._create_default_https_context = _create_unverified_https_context
+
     # Qumulo API login
     client = RestClient(opts.cluster, opts.port)
     client.login(opts.user, opts.password)
@@ -172,14 +173,28 @@ def do_it(opts, args):
         owners[owner].insert(s["name"], 1)
 
     def format_capacity(samples):
+        mean = float(samples) / opts.samples
+        stddev = (((1 - mean) ** 2 * samples +
+                   (mean ** 2) * (opts.samples - samples)) / opts.samples) ** (1/2.)
+        confidence =  1.96 * stddev / (opts.samples ** (1/2.))
+
         bytes_per_terabyte = 1000. ** 4
         if opts.dollars_per_terabyte != None:
-            return "$%0.02f/month" % (samples * total_capacity_used /
-                                      opts.samples /
-                                      bytes_per_terabyte *
-                                      opts.dollars_per_terabyte)
+            to_dollars = lambda(adjust) : ((mean + adjust) * total_capacity_used /
+                                           bytes_per_terabyte *
+                                           opts.dollars_per_terabyte)
+            if opts.confidence_intervals:
+                return "[$%0.02f-$%0.02f]/month" % (to_dollars(-confidence),
+                                                    to_dollars(confidence))
+            else:
+                return "$0.02f/month" % (to_dollars(0))
         else:
-            return pretty_print_capacity(samples * total_capacity_used / opts.samples)
+            if opts.confidence_intervals:
+                return "[%s-%s]" % (
+                    pretty_print_capacity((mean - confidence) * total_capacity_used),
+                    pretty_print_capacity((mean + confidence) * total_capacity_used))
+            else:
+                return "%s" % pretty_print_capacity((mean) * total_capacity_used)
 
     print "Total: %s" % (format_capacity(opts.samples))
     sorted_owners = sorted(owners.items(),
@@ -241,6 +256,16 @@ def process_command_line():
         "-D", "--dollars-per-terabyte",
         help="Show capacity in dollars. Set conversion factor in $/TB/month",
         action="store", dest="dollars_per_terabyte", type="float", default=None)
+
+    parser.add_option(
+        "-i", "--confidence-interval",
+        help="Show 95% confidence intervals",
+        action="store_true", dest="confidence_intervals")
+
+    parser.add_option(
+        "-A", "--allow-self-signed-server",
+        help="silently connect to self-signed servers",
+        action="store_true", dest="connect_to_self_signed_servers")
 
     (opts, args) = parser.parse_args()
 
