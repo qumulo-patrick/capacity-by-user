@@ -142,7 +142,7 @@ def get_owner_vec(pool, credentials, samples, args):
     owner_id_sublists = pool.map(get_file_attrs, sublists)
     return sum(owner_id_sublists, [])
 
-def do_it(args):
+def main(args):
     credentials = {"user" : args.user,
                    "password" : args.password,
                    "cluster" : args.cluster}
@@ -217,7 +217,7 @@ def do_it(args):
 
         print tree.__str__("    ", lambda x: format_capacity(x))
 
-def process_command_line():
+def process_command_line(args):
     parser = ArgumentParser()
     parser.add_argument("-U", "--user", default="admin",
             help="The user to connect as (default: %(default)s)")
@@ -257,11 +257,7 @@ def process_command_line():
 
     parser.add_argument("path", help="Filesystem path to sample")
 
-    return parser.parse_args()
-
-def main(_):
-    args = process_command_line()
-    do_it(args)
+    return parser.parse_args(args)
 
 if __name__ == '__main__':
-    main(sys.argv[1:])
+    main(process_command_line(sys.argv[1:]))
