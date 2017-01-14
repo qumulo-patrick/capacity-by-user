@@ -3,6 +3,7 @@
 from qumulo.rest_client import RestClient
 import os
 import pwd
+import sys
 import ssl
 import heapq
 from optparse import OptionParser
@@ -281,5 +282,9 @@ def process_command_line():
 
     return opts, args
 
-(opts, args) = process_command_line()
-do_it(opts, args)
+def main(_):
+    (opts, args) = process_command_line()
+    do_it(opts, args)
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
