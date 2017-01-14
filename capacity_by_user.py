@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from qumulo.rest_client import RestClient
 import os
 import pwd
