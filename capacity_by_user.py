@@ -6,7 +6,7 @@ import pwd
 import sys
 import ssl
 import heapq
-from optparse import OptionParser
+from argparse import ArgumentParser
 from multiprocessing import Pool
 
 class SampleTreeNode:
@@ -130,24 +130,24 @@ def get_file_attrs(x):
         result.append(str_owner)
     return result
 
-def get_samples(pool, path, credentials, opts):
+def get_samples(pool, credentials, args):
     return sum(pool.map(
         get_samples_worker,
-        ([(credentials, args[0], opts.samples / opts.concurrency)] * opts.concurrency)),
+        ([(credentials, args.path, args.samples / args.concurrency)] * args.concurrency)),
                   [])
 
-def get_owner_vec(pool, credentials, samples, opts):
+def get_owner_vec(pool, credentials, samples, args):
     file_ids = [s["id"] for s in samples]
-    sublists = [(credentials, file_ids[i:i+100]) for i in xrange(0, opts.samples, 100)]
+    sublists = [(credentials, file_ids[i:i+100]) for i in xrange(0, args.samples, 100)]
     owner_id_sublists = pool.map(get_file_attrs, sublists)
     return sum(owner_id_sublists, [])
 
-def do_it(opts, args):
-    credentials = {"user" : opts.user,
-                   "password" : opts.password,
-                   "cluster" : opts.cluster}
+def do_it(args):
+    credentials = {"user" : args.user,
+                   "password" : args.password,
+                   "cluster" : args.cluster}
 
-    if opts.connect_to_self_signed_servers:
+    if args.allow_self_signed_server:
         try:
             _create_unverified_https_context = ssl._create_unverified_context
         except AttributeError:
@@ -158,19 +158,19 @@ def do_it(opts, args):
             ssl._create_default_https_context = _create_unverified_https_context
 
     # Qumulo API login
-    client = RestClient(opts.cluster, opts.port)
-    client.login(opts.user, opts.password)
+    client = RestClient(args.cluster, args.port)
+    client.login(args.user, args.password)
 
     total_capacity_used = int(
-        client.fs.read_dir_aggregates(args[0])['total_capacity'])
+        client.fs.read_dir_aggregates(args.path)['total_capacity'])
 
-    pool = Pool(opts.concurrency)
+    pool = Pool(args.concurrency)
 
     # First build a vector of all samples...
-    samples = get_samples(pool, args[0], credentials, opts)
+    samples = get_samples(pool, credentials, args)
 
     # Then get a corresponding vector of owner strings
-    owner_vec = get_owner_vec(pool, credentials, samples, opts)
+    owner_vec = get_owner_vec(pool, credentials, samples, args)
 
     owners = {}
     directories = {}
@@ -181,110 +181,87 @@ def do_it(opts, args):
         owners[owner].insert(s["name"], 1)
 
     def format_capacity(samples):
-        mean = float(samples) / opts.samples
+        mean = float(samples) / args.samples
         stddev = (((1 - mean) ** 2 * samples +
-                   (mean ** 2) * (opts.samples - samples)) / opts.samples) ** (1/2.)
-        confidence =  1.96 * stddev / (opts.samples ** (1/2.))
+                   (mean ** 2) * (args.samples - samples)) / args.samples) ** (1/2.)
+        confidence =  1.96 * stddev / (args.samples ** (1/2.))
 
         bytes_per_terabyte = 1000. ** 4
-        if opts.dollars_per_terabyte != None:
+        if args.dollars_per_terabyte != None:
             to_dollars = lambda(adjust) : ((mean + adjust) * total_capacity_used /
                                            bytes_per_terabyte *
-                                           opts.dollars_per_terabyte)
-            if opts.confidence_intervals:
+                                           args.dollars_per_terabyte)
+            if args.confidence_interval:
                 return "[$%0.02f-$%0.02f]/month" % (to_dollars(-confidence),
                                                     to_dollars(confidence))
             else:
                 return "$0.02f/month" % (to_dollars(0))
         else:
-            if opts.confidence_intervals:
+            if args.confidence_interval:
                 return "[%s-%s]" % (
                     pretty_print_capacity((mean - confidence) * total_capacity_used),
                     pretty_print_capacity((mean + confidence) * total_capacity_used))
             else:
                 return "%s" % pretty_print_capacity((mean) * total_capacity_used)
 
-    print "Total: %s" % (format_capacity(opts.samples))
+    print "Total: %s" % (format_capacity(args.samples))
     sorted_owners = sorted(owners.items(),
                            lambda x, y: cmp(y[1].sum_samples, x[1].sum_samples))
     # For each owner, print total used, then refine the tree and dump it.
     for name, tree in sorted_owners:
         print "Owner %s (~%0.1f%%/%s)" % (
-            name, tree.sum_samples / float(opts.samples) * 100,
+            name, tree.sum_samples / float(args.samples) * 100,
             format_capacity(tree.sum_samples))
-        tree.prune_until(max_leaves=opts.max_leaves,
-                         min_samples=opts.min_samples)
+        tree.prune_until(max_leaves=args.max_leaves,
+                         min_samples=args.min_samples)
 
         print tree.__str__("    ", lambda x: format_capacity(x))
 
 def process_command_line():
-    usage = "usage: %prog [options] path"
-    parser = OptionParser(usage=usage)
-    parser.add_option(
-        "-U", "--user",
-        help="The user to connect as",
-        action="store", dest="user", type="string", default="admin")
+    parser = ArgumentParser()
+    parser.add_argument("-U", "--user", default="admin",
+            help="The user to connect as (default: %(default)s)")
 
-    parser.add_option(
-        "-P", "--password",
-        help="The password to connect with",
-        action="store", dest="password", type="string", default="admin")
+    parser.add_argument("-P", "--password", default="admin",
+        help="The password to connect with (default: %(default)s)")
 
-    parser.add_option(
-        "-C", "--cluster",
-        help="The cluster to connect to",
-        action="store", dest="cluster", type="string", default="qumulo")
+    parser.add_argument("-C", "--cluster", default="qumulo",
+        help="The hostname of the cluster to connect to (default: %(default)s)")
 
-    parser.add_option(
-        "-p", "--port",
-        help="The port to connect to",
-        action="store", dest="port", type="int", default=8000)
+    parser.add_argument("-p", "--port", type=int, default=8000,
+        help="The port to connect to (default: %(default)s)")
 
-    parser.add_option(
-        "-s", "--samples",
-        help="The number of samples to take", default=2000,
-        action="store", dest="samples", type="int")
+    parser.add_argument("-s", "--samples", type=int, default=2000,
+        help="The number of samples to take (default: %(default)s)")
 
-    parser.add_option(
-        "-c", "--concurrency",
-        help="The number of threads to query with", default=10,
-        action="store", dest="concurrency", type="int")
+    parser.add_argument("-c", "--concurrency", type=int, default=10,
+        help="The number of threads to query with (default: %(default)s)")
 
-    parser.add_option(
-        "-m", "--min-samples",
-        help="The minimum number of samples to show at a leaf in output",
-        action="store", dest="min_samples", type="int", default=5)
+    parser.add_argument("-m", "--min-samples", type=int, default=5,
+        help='''The minimum number of samples to show at a leaf in output
+                (default: %(default)s)''')
 
-    parser.add_option(
-        "-x", "--max-leaves",
-        help="The maximum number of leaves to show per user",
-        action="store", dest="max_leaves", type="int", default=30)
+    parser.add_argument("-x", "--max-leaves", type=int, default=30,
+        help='''The maximum number of leaves to show per user
+                (default: %(default)s)''')
 
-    parser.add_option(
-        "-D", "--dollars-per-terabyte",
-        help="Show capacity in dollars. Set conversion factor in $/TB/month",
-        action="store", dest="dollars_per_terabyte", type="float", default=None)
+    parser.add_argument(
+        "-D", "--dollars-per-terabyte", type=float,
+        help="Show capacity in dollars. Set conversion factor in $/TB/month")
 
-    parser.add_option(
-        "-i", "--confidence-interval",
-        help="Show 95% confidence intervals",
-        action="store_true", dest="confidence_intervals")
+    parser.add_argument("-i", "--confidence-interval", action="store_true",
+        help="Show 95%% confidence intervals")
 
-    parser.add_option(
-        "-A", "--allow-self-signed-server",
-        help="silently connect to self-signed servers",
-        action="store_true", dest="connect_to_self_signed_servers")
+    parser.add_argument("-A", "--allow-self-signed-server", action="store_true",
+        help="Silently connect to self-signed servers")
 
-    (opts, args) = parser.parse_args()
+    parser.add_argument("path", help="Filesystem path to sample")
 
-    if len(args) != 1:
-        parser.error("missing required path arguuemt")
-
-    return opts, args
+    return parser.parse_args()
 
 def main(_):
-    (opts, args) = process_command_line()
-    do_it(opts, args)
+    args = process_command_line()
+    do_it(args)
 
 if __name__ == '__main__':
     main(sys.argv[1:])
