@@ -7,27 +7,39 @@ Imagine you have a hundred or a thousand artists or researchers all busily colla
 
 ## Usage
 ```
-Usage: capacity_by_user.py [options] path
+usage: capacity_by_user.py [-h] [-U USER] [-P PASSWORD] [-C CLUSTER] [-p PORT]
+                           [-s SAMPLES] [-c CONCURRENCY] [-m MIN_SAMPLES]
+                           [-x MAX_LEAVES] [-D DOLLARS_PER_TERABYTE] [-i] [-A]
+                           path
 
-Options:
+positional arguments:
+  path                  Filesystem path to sample
+
+optional arguments:
   -h, --help            show this help message and exit
-  -U USER, --user=USER  The user to connect as
-  -P PASSWORD, --password=PASSWORD
-                        The password to connect with
-  -C CLUSTER, --cluster=CLUSTER
-                        The cluster to connect to
-  -p PORT, --port=PORT  The port to connect to
-  -s SAMPLES, --samples=SAMPLES
-                        The number of samples to take
-  -c CONCURRENCY, --concurrency=CONCURRENCY
-                        The number of threads to query with
-  -m MIN_SAMPLES, --min-samples=MIN_SAMPLES
+  -U USER, --user USER  The user to connect as (default: admin)
+  -P PASSWORD, --password PASSWORD
+                        The password to connect with (default: admin)
+  -C CLUSTER, --cluster CLUSTER
+                        The hostname of the cluster to connect to (default:
+                        qumulo)
+  -p PORT, --port PORT  The port to connect to (default: 8000)
+  -s SAMPLES, --samples SAMPLES
+                        The number of samples to take (default: 2000)
+  -c CONCURRENCY, --concurrency CONCURRENCY
+                        The number of threads to query with (default: 10)
+  -m MIN_SAMPLES, --min-samples MIN_SAMPLES
                         The minimum number of samples to show at a leaf in
-                        output
-  -x MAX_LEAVES, --max-leaves=MAX_LEAVES
+                        output (default: 5)
+  -x MAX_LEAVES, --max-leaves MAX_LEAVES
                         The maximum number of leaves to show per user
-  -D DOLLARS_PER_TERABYTE, --dollars-per-terabyte=DOLLARS_PER_TERABYTE
+                        (default: 30)
+  -D DOLLARS_PER_TERABYTE, --dollars-per-terabyte DOLLARS_PER_TERABYTE
                         Show capacity in dollars. Set conversion factor in
                         $/TB/month
+  -i, --confidence-interval
+                        Show 95% confidence intervals
+  -A, --allow-self-signed-server
+                        Silently connect to self-signed servers
 ```
 
