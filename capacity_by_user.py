@@ -83,7 +83,7 @@ def pretty_print_capacity(x):
 
 def get_samples_worker(x):
     credentials, path, n = x
-    client = RestClient(credentials["cluster"], 8000)
+    client = RestClient(credentials["cluster"], credentials["port"])
     client.login(credentials["user"], credentials["password"])
     return client.fs.get_file_samples(path=path, count=n, by_value="capacity")
 
@@ -117,7 +117,7 @@ def translate_owner_to_owner_string(cli, owner):
 seen = {}
 def get_file_attrs(x):
     credentials, paths = x
-    client = RestClient(credentials["cluster"], 8000)
+    client = RestClient(credentials["cluster"], credentials["port"])
     client.login(credentials["user"], credentials["password"])
     result = []
     for path in paths:
@@ -145,7 +145,8 @@ def get_owner_vec(pool, credentials, samples, args):
 def main(args):
     credentials = {"user" : args.user,
                    "password" : args.password,
-                   "cluster" : args.cluster}
+                   "cluster" : args.cluster,
+                   "port" : args.port}
 
     if args.allow_self_signed_server:
         try:
@@ -195,7 +196,7 @@ def main(args):
                 return "[$%0.02f-$%0.02f]/month" % (to_dollars(-confidence),
                                                     to_dollars(confidence))
             else:
-                return "$0.02f/month" % (to_dollars(0))
+                return "$%0.02f/month" % (to_dollars(0),)
         else:
             if args.confidence_interval:
                 return "[%s-%s]" % (
