@@ -1,0 +1,5 @@
+server_name = '<ip.address>'
+domain_name = '<FQDN here>'
+user_name = 'DOMAIN\\user'
+password = '<domain password>'
+baseDN = 'cn=users,dc=demo,dc=int'

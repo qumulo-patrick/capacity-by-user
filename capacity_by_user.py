@@ -9,6 +9,10 @@ import heapq
 from argparse import ArgumentParser
 from multiprocessing import Pool
 
+from sid_lookup import accountname_from_sid
+
+SID_LOOKUP = False
+
 class SampleTreeNode:
     def __init__(self, name, parent=None):
         self.parent = parent
@@ -98,8 +102,20 @@ class memoize:
       self.memoized[args] = self.function(*args)
       return self.memoized[args]
 
+def sid_in_identities(identities):
+    for i in identities:
+        if i['id_type'] == 'SMB_SID':
+            return True
+    return False
+
 def format_owner(identities):
-    preferred_keys = ('LOCAL_USER', 'NFS_UID')
+    preferred_keys = ('LOCAL_USER', 'LOCAL_GROUP', 'SMB_SID', 'NFS_UID', 'NFS_GID')
+    # If an SMB_SID exists in identities and we've been asked to look it up
+    # just do that
+    if SID_LOOKUP and sid_in_identities(identities):
+        for i in identities:
+            if i['id_type'] == 'SMB_SID':
+                return i['id_type'] + ":" + accountname_from_sid(i['id_value'])
     for key in preferred_keys:
         for el in identities:
             if el['id_type'] == key:
@@ -112,7 +128,9 @@ def format_owner(identities):
 
 @memoize
 def translate_owner_to_owner_string(cli, owner):
-    return format_owner(cli.auth.auth_id_to_all_related_identities(owner))
+    result = format_owner(cli.auth.auth_id_to_all_related_identities(owner))
+    # print "translate_owner_to_owner_string()", result
+    return result
 
 seen = {}
 def get_file_attrs(x):
@@ -125,6 +143,7 @@ def get_file_attrs(x):
             result += [seen[path]]
             continue
         owner_id = client.fs.get_attr(path)["owner"]
+        # print owner_id
         str_owner = translate_owner_to_owner_string(client, owner_id)
         seen[path] = str_owner
         result.append(str_owner)
@@ -140,6 +159,7 @@ def get_owner_vec(pool, credentials, samples, args):
     file_ids = [s["id"] for s in samples]
     sublists = [(credentials, file_ids[i:i+100]) for i in xrange(0, args.samples, 100)]
     owner_id_sublists = pool.map(get_file_attrs, sublists)
+    # print owner_id_sublists
     return sum(owner_id_sublists, [])
 
 def main(args):
@@ -147,6 +167,12 @@ def main(args):
                    "password" : args.password,
                    "cluster" : args.cluster,
                    "port" : args.port}
+
+    if args.sid_lookup:
+        print "SID lookup enabled"
+        global SID_LOOKUP
+        SID_LOOKUP = True
+
 
     if args.allow_self_signed_server:
         try:
@@ -255,6 +281,9 @@ def process_command_line(args):
 
     parser.add_argument("-A", "--allow-self-signed-server", action="store_true",
         help="Silently connect to self-signed servers")
+
+    parser.add_argument("-S", "--sid-lookup", action="store_true",
+        help="Lookup SIDs in AD and print names instead of SIDs")
 
     parser.add_argument("path", help="Filesystem path to sample")
 
