@@ -12,6 +12,8 @@ from multiprocessing import Pool
 from sid_lookup import accountname_from_sid
 
 SID_LOOKUP = False
+# default behavior from original code in order of preference
+IDENTITY_TYPES = ('LOCAL_USER', 'NFS_UID')
 
 class SampleTreeNode:
     def __init__(self, name, parent=None):
@@ -109,10 +111,12 @@ def sid_in_identities(identities):
     return False
 
 def format_owner(identities):
-    preferred_keys = ('LOCAL_USER', 'LOCAL_GROUP', 'SMB_SID', 'NFS_UID', 'NFS_GID')
+    preferred_keys = IDENTITY_TYPES
     # If an SMB_SID exists in identities and we've been asked to look it up
     # just do that
-    if SID_LOOKUP and sid_in_identities(identities):
+    if SID_LOOKUP \
+            and sid_in_identities(identities) \
+            and 'SMB_SID' in IDENTITY_TYPES:
         for i in identities:
             if i['id_type'] == 'SMB_SID':
                 return i['id_type'] + ":" + accountname_from_sid(i['id_value'])
@@ -163,15 +167,27 @@ def get_owner_vec(pool, credentials, samples, args):
     return sum(owner_id_sublists, [])
 
 def main(args):
+    # add the default here if none specified https://bugs.python.org/issue16399
+    # default is just the original behavior of this tool
+    if args.identity_type is not None:
+        global IDENTITY_TYPES
+        IDENTITY_TYPES = args.identity_type
+
+    # print args
+    # print IDENTITY_TYPES
+
     credentials = {"user" : args.user,
                    "password" : args.password,
                    "cluster" : args.cluster,
                    "port" : args.port}
 
     if args.sid_lookup:
-        print "SID lookup enabled"
-        global SID_LOOKUP
-        SID_LOOKUP = True
+        if 'SMB_SID' not in IDENTITY_TYPES:
+            print "Warning: SID lookup requested but 'SMB_SID' not specified in --identity-type."
+        else:
+            print "SID lookup enabled"
+            global SID_LOOKUP
+            SID_LOOKUP = True
 
 
     if args.allow_self_signed_server:
@@ -284,6 +300,12 @@ def process_command_line(args):
 
     parser.add_argument("-S", "--sid-lookup", action="store_true",
         help="Lookup SIDs in AD and print names instead of SIDs")
+
+    parser.add_argument("-I", "--identity-type", action="append",
+        choices=['LOCAL_USER', 'LOCAL_GROUP', 'SMB_SID', 'NFS_UID', 'NFS_GID'],
+        help="Choose an identity type. May be specified multiple times in order "
+             "of preference. Choose from ('LOCAL_USER', 'LOCAL_GROUP', 'SMB_SID',"
+             " 'NFS_UID', 'NFS_GID')")
 
     parser.add_argument("path", help="Filesystem path to sample")
 
