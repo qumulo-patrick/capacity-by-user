@@ -124,7 +124,7 @@ def get_file_attrs(x):
         if seen.has_key(path):
             result += [seen[path]]
             continue
-        owner_id = client.fs.get_attr(path)["owner"]
+        owner_id = client.fs.get_file_attr(path)["owner"]
         str_owner = translate_owner_to_owner_string(client, owner_id)
         seen[path] = str_owner
         result.append(str_owner)

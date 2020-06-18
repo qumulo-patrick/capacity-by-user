@@ -6,6 +6,11 @@ This script uses the sampling facilities built into Qumulo Core to provide an ov
 Imagine you have a hundred or a thousand artists or researchers all busily collaborating on a project. They create data, and sometimes they forget to go clean it up. You want to get your army of talented professionals to reduce their capacity consumption. What do you tell them? This script breaks down a tree by user and then shows, for each user, where that user consumes space in the tree.
 
 ## Usage
+Requirements
+
+* python 2.7.11 - python 2.7.15
+* python qumulo_api package 3.1.0 or newer
+
 ```
 usage: capacity_by_user.py [-h] [-U USER] [-P PASSWORD] [-C CLUSTER] [-p PORT]
                            [-s SAMPLES] [-c CONCURRENCY] [-m MIN_SAMPLES]
