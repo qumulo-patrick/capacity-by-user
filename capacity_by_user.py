@@ -239,8 +239,10 @@ def main(args):
             format_capacity(tree.sum_samples))
         tree.prune_until(max_leaves=args.max_leaves,
                          min_samples=args.min_samples)
-
-        print tree.__str__("    ", lambda x: format_capacity(x))
+        if "" in tree.children:
+            print tree.children[""].__str__("    ", lambda x: format_capacity(x))
+        else:
+            print tree.__str__("    ", lambda x: format_capacity(x))
 
 def process_command_line(args):
     parser = ArgumentParser()
