@@ -13,14 +13,14 @@ Imagine you have a hundred or a thousand artists or researchers all busily colla
 
 ## Example commands
 
-`python2 capacity_by_user.py -C qumulo.local -U admin -P $PASS /home -s 10000 -x 3 -D 50`
+`python3 capacity_by_user.py -C qumulo.local -U admin -P $PASS /home -s 10000 -x 3 -D 50`
 
 This command will look at a sampled set of items from the "/home" directory and subdirectories (which in this case is mostly users' scratch space). It assigns a value of $50 to the cost per terabyte (maybe that's the amount you bill your users per month). It will limit the output to a maximum of 3 leaves per user to keep things succinct.
 
 <img src="https://raw.githubusercontent.com/Qumulo/capacity-by-user/master/images/capacity-by-user-with-dollar-amount.png" width="400" alt="Dollar capacity by user output on the command line with top 5 users shown" />
 
 
-`python2 capacity_by_user.py -C qumulo.local -U admin -P $PASS /home -s 10000 -x 3`
+`python3 capacity_by_user.py -C qumulo.local -U admin -P $PASS /home -s 10000 -x 3`
 
 This command is the same as the first example. It reports by capacity rather than dollar amounts as the `-D 50` argument was removed.
 
@@ -31,8 +31,8 @@ This command is the same as the first example. It reports by capacity rather tha
 
 Requirements
 
-* python 2.7.11 - python 2.7.15
-* python qumulo_api package 3.1.0 or newer
+* python 3.4.11 or newer
+* python qumulo_api package 4.0.0 or newer
 
 ```
 usage: capacity_by_user.py [-h] [-U USER] [-P PASSWORD] [-C CLUSTER] [-p PORT]
