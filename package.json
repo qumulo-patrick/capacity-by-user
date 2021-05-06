@@ -1,9 +1,0 @@
-{
-  "name": "capacity-by-user",
-  "version": "1.0.0",
-  "devDependencies": {
-    "eslint": ">=4.18.2",
-    "jshint": "2.8.0",
-    "jasmine": "2.3.0"
-  }
-}
