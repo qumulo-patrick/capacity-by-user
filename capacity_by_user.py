@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 
-from qumulo.rest_client import RestClient
 import os
 import pwd
 import sys
 import ssl
 import heapq
+
 from argparse import ArgumentParser
 from functools import cmp_to_key
 from operator import attrgetter
 from multiprocessing import Pool
+
+from qumulo.rest_client import RestClient
 
 class SampleTreeNode:
     def __init__(self, name, parent=None):
@@ -163,7 +165,7 @@ def get_samples(pool, credentials, args):
 
 def get_owner_vec(pool, credentials, samples, args):
     file_ids = [s["id"] for s in samples]
-    sublists = [(credentials, file_ids[i:i+100]) for i in xrange(0, args.samples, 100)]
+    sublists = [(credentials, file_ids[i:i+100]) for i in range(0, args.samples, 100)]
     owner_id_sublists = pool.map(get_file_attrs, sublists)
     return sum(owner_id_sublists, [])
 
@@ -214,9 +216,9 @@ def main(args):
 
         bytes_per_terabyte = 1000. ** 4
         if args.dollars_per_terabyte != None:
-            def to_dollars(adjust): 
+            def to_dollars(adjust):
                 return (
-                    (mean + adjust) 
+                    (mean + adjust)
                     * total_capacity_used
                     / bytes_per_terabyte
                     * args.dollars_per_terabyte
