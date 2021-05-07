@@ -1,17 +1,103 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import pwd
 import sys
 import ssl
 import heapq
 
-from argparse import ArgumentParser
 from functools import cmp_to_key
 from operator import attrgetter
 from multiprocessing import Pool
+from typing import Sequence
 
 from qumulo.rest_client import RestClient
+
+
+def parse_args(args: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description='Show an overview of capacity consumed by user and path',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        '-u',
+        '--user',
+        default='admin',
+        help='The user to connect as'
+    )
+    parser.add_argument(
+        '-p',
+        '--password',
+        default='admin',
+        help='The password to connect with'
+    )
+    parser.add_argument(
+        '-c',
+        '--cluster',
+        default='qumulo',
+        help='The hostname of the cluster to connect to'
+    )
+    parser.add_argument(
+        '-P',
+        '--port',
+        type=int,
+        default=8000,
+        help='The port to connect to'
+    )
+    parser.add_argument(
+        '-s',
+        '--samples',
+        type=int,
+        default=2000,
+        help='The number of samples to take'
+    )
+    parser.add_argument(
+        '-C',
+        '--concurrency',
+        type=int,
+        default=10,
+        help='The number of threads to query with'
+    )
+    parser.add_argument(
+        '-m',
+        '--min-samples',
+        type=int,
+        default=5,
+        help='The minimum number of samples to show at a leaf in output'
+    )
+    parser.add_argument(
+        '-x',
+        '--max-leaves',
+        type=int,
+        default=30,
+        help='The maximum number of leaves to show per user'
+    )
+    parser.add_argument(
+        '-D',
+        '--dollars-per-terabyte',
+        type=float,
+        help='Show capacity in dollars. Set conversion factor in $/TB/month'
+    )
+    parser.add_argument(
+        '-i',
+        '--confidence-interval',
+        action='store_true',
+        help='Show 95%% confidence intervals'
+    )
+    parser.add_argument(
+        '-A',
+        '--allow-self-signed-server',
+        action='store_true',
+        help='Silently connect to self-signed servers'
+    )
+    parser.add_argument(
+        'path',
+        help='Filesystem path to sample'
+    )
+
+    return parser.parse_args(args)
+
 
 class SampleTreeNode:
     def __init__(self, name, parent=None):
@@ -252,47 +338,5 @@ def main(args):
         else:
             print(tree.__str__("    ", lambda x: format_capacity(x)))
 
-def process_command_line(args):
-    parser = ArgumentParser()
-    parser.add_argument("-U", "--user", default="admin",
-            help="The user to connect as (default: %(default)s)")
-
-    parser.add_argument("-P", "--password", default="admin",
-        help="The password to connect with (default: %(default)s)")
-
-    parser.add_argument("-C", "--cluster", default="qumulo",
-        help="The hostname of the cluster to connect to (default: %(default)s)")
-
-    parser.add_argument("-p", "--port", type=int, default=8000,
-        help="The port to connect to (default: %(default)s)")
-
-    parser.add_argument("-s", "--samples", type=int, default=2000,
-        help="The number of samples to take (default: %(default)s)")
-
-    parser.add_argument("-c", "--concurrency", type=int, default=10,
-        help="The number of threads to query with (default: %(default)s)")
-
-    parser.add_argument("-m", "--min-samples", type=int, default=5,
-        help='''The minimum number of samples to show at a leaf in output
-                (default: %(default)s)''')
-
-    parser.add_argument("-x", "--max-leaves", type=int, default=30,
-        help='''The maximum number of leaves to show per user
-                (default: %(default)s)''')
-
-    parser.add_argument(
-        "-D", "--dollars-per-terabyte", type=float,
-        help="Show capacity in dollars. Set conversion factor in $/TB/month")
-
-    parser.add_argument("-i", "--confidence-interval", action="store_true",
-        help="Show 95%% confidence intervals")
-
-    parser.add_argument("-A", "--allow-self-signed-server", action="store_true",
-        help="Silently connect to self-signed servers")
-
-    parser.add_argument("path", help="Filesystem path to sample")
-
-    return parser.parse_args(args)
-
 if __name__ == '__main__':
-    main(process_command_line(sys.argv[1:]))
+    main(parse_args(sys.argv[1:]))
