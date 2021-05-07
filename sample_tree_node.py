@@ -1,3 +1,5 @@
+import heapq
+
 from typing import Callable, Generator, Sequence
 
 
