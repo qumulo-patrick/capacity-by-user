@@ -5,7 +5,6 @@ import os
 import pwd
 import sys
 import ssl
-import heapq
 
 from functools import cmp_to_key
 from operator import attrgetter

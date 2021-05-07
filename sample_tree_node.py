@@ -11,6 +11,9 @@ class SampleTreeNode:
         self.sum_samples = 0
         self.children = {}
 
+    def __lt__(self, other: 'SampleTreeNode') -> bool:
+        return self.samples < other.samples
+
     def insert(self, name: str, samples: int) -> None:
         self._insert(name.split("/"), samples)
 
