@@ -4,7 +4,7 @@ import unittest
 
 from parameterized import parameterized
 
-from capacity_by_user import parse_args
+from capacity_by_user import parse_args, pretty_print_capacity
 
 
 class ArgparseTest(unittest.TestCase):
@@ -79,6 +79,21 @@ class ArgparseTest(unittest.TestCase):
     ) -> None:
         args = parse_args(['my_path', allow_self_signed_server_arg])
         self.assertTrue(args.allow_self_signed_server)
+
+
+class HelperTest(unittest.TestCase):
+    @parameterized.expand([
+        [2 ** 0, 'b'],
+        [2 ** 10, 'K'],
+        [2 ** 20, 'M'],
+        [2 ** 30, 'G'],
+        [2 ** 40, 'T'],
+        [2 ** 50, 'P'],
+        [2 ** 60, 'E'],
+    ])
+    def test_pretty_print_capacity(self, capacity, expected_unit) -> None:
+        self.assertIn(expected_unit, pretty_print_capacity(capacity))
+
 
 
 if __name__ == '__main__':

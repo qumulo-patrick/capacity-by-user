@@ -99,12 +99,16 @@ def parse_args(args: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def pretty_print_capacity(x):
-    start = (1024 ** k for k in (6, 5, 4, 3, 2, 1, 0))
-    units = ("E", "P", "T", "G", "M", "K", "b")
-    for l, u in zip(start, units):
-        if x >= l: return "%0.02f%s" % (x / float(l), u)
-    return 0
+def pretty_print_capacity(capacity: int) -> str:
+    starting_points = [1024 ** k for k in (6, 5, 4, 3, 2, 1, 0)]
+    units = ['E', 'P', 'T', 'G', 'M', 'K', 'b']
+
+    for starting_point, unit in zip(starting_points, units):
+        if capacity >= starting_point:
+            return f'{capacity / float(starting_point): .2f}{unit}'
+
+    return '0'
+
 
 def get_samples_worker(x):
     credentials, path, n = x
