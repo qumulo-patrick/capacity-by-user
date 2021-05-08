@@ -6,10 +6,11 @@ import pwd
 import sys
 import ssl
 
+from dataclasses import dataclass
 from functools import cmp_to_key
 from operator import attrgetter
 from multiprocessing import Pool
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 from qumulo.rest_client import RestClient
 from sample_tree_node import SampleTreeNode
@@ -110,11 +111,41 @@ def pretty_print_capacity(capacity: int) -> str:
     return '0'
 
 
-def get_samples_worker(x):
-    credentials, path, n = x
-    client = RestClient(credentials["cluster"], credentials["port"])
-    client.login(credentials["user"], credentials["password"])
-    return client.fs.get_file_samples(path=path, count=n, by_value="capacity")
+@dataclass
+class Credentials:
+    user: str
+    password: str
+    cluster: str
+    port: int
+
+
+@dataclass
+class WorkerArgs:
+    credentials: Credentials
+    path: str
+    samples_to_request: int
+
+
+def get_samples_worker(args: WorkerArgs) -> int:
+    client = RestClient(args.credentials.cluster, args.credentials.port)
+    client.login(args.credentials.user, args.credentials.password)
+    return client.fs.get_file_samples(
+            path=args.path, count=args.samples_to_request, by_value='capacity')
+
+
+def get_samples(
+    pool: Pool,
+    credentials: Credentials,
+    samples: int,
+    concurrency: int,
+    path: str
+) -> int:
+    samples_to_request = samples / concurrency
+    request = WorkerArgs(credentials, path, samples_to_request)
+    requests = [request] * concurrency
+
+    return sum(pool.map(get_samples_worker, requests))
+
 
 class memoize:
   def __init__(self, function):
@@ -183,12 +214,6 @@ def get_file_attrs(x):
         result.append(str_owner)
     return result
 
-def get_samples(pool, credentials, args):
-    return sum(pool.map(
-        get_samples_worker,
-        ([(credentials, args.path, args.samples / args.concurrency)] * args.concurrency)),
-                  [])
-
 def get_owner_vec(pool, credentials, samples, args):
     file_ids = [s["id"] for s in samples]
     sublists = [(credentials, file_ids[i:i+100]) for i in range(0, args.samples, 100)]
@@ -200,6 +225,9 @@ def main(args):
                    "password" : args.password,
                    "cluster" : args.cluster,
                    "port" : args.port}
+    # XXX: We need both credential objects until get_file_attrs is converted
+    credentials_obj = Credentials(
+            args.user, args.password, args.cluster, args.port)
 
     if args.allow_self_signed_server:
         try:
@@ -221,7 +249,8 @@ def main(args):
     pool = Pool(args.concurrency)
 
     # First build a vector of all samples...
-    samples = get_samples(pool, credentials, args)
+    samples = get_samples(
+            pool, credentials_obj, args.samples, args.concurrency, args.path)
 
     # Then get a corresponding vector of owner strings
     owner_vec = get_owner_vec(pool, credentials, samples, args)

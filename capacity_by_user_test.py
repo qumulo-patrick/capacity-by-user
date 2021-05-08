@@ -2,9 +2,17 @@
 
 import unittest
 
+from multiprocessing.pool import ThreadPool
 from parameterized import parameterized
+from unittest.mock import MagicMock, patch
 
-from capacity_by_user import parse_args, pretty_print_capacity
+from capacity_by_user import (
+    Credentials,
+    WorkerArgs,
+    get_samples,
+    parse_args,
+    pretty_print_capacity,
+)
 
 
 class ArgparseTest(unittest.TestCase):
@@ -94,6 +102,22 @@ class HelperTest(unittest.TestCase):
     def test_pretty_print_capacity(self, capacity, expected_unit) -> None:
         self.assertIn(expected_unit, pretty_print_capacity(capacity))
 
+    @patch('capacity_by_user.get_samples_worker')
+    def test_get_samples_sums_data_from_workers(self, mock_worker) -> None:
+        mock_worker.return_value = 1
+
+        concurrency = 5
+        pool = ThreadPool(concurrency)
+
+        credentials = Credentials('my_user', 'my_password', 'my_cluster', 8000)
+        samples = 5
+        path = 'my_path'
+        result = get_samples(pool, credentials, samples, concurrency, path)
+
+        self.assertEqual(mock_worker.call_count, concurrency)
+        mock_worker.assert_called_with(
+                WorkerArgs(credentials, path, samples / concurrency))
+        self.assertEqual(result, concurrency)
 
 
 if __name__ == '__main__':
