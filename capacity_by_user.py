@@ -147,41 +147,47 @@ def get_samples(
     return sum(pool.map(get_samples_worker, requests))
 
 
-def format_owner(cli, auth_id, owner_type, owner_value):
-    user = ""
+def translate_owner_to_owner_string(
+    rest_client: RestClient,
+    auth_id: str,
+    owner_type: str,
+    owner_value: str
+) -> str:
+    user = None
+
     if owner_type == 'SMB_SID':
         try:
-            user_details = cli.ad.sid_to_ad_account(owner_value)
-            user = 'AD:' + user_details['name']
+            user_details = rest_client.ad.sid_to_ad_account(owner_value)
+            user = f'AD:{user_details["name"]}'
         except:
             pass
     elif owner_type == 'NFS_UID':
         try:
-            ids = cli.auth.auth_id_to_all_related_identities(auth_id)
+            ids = rest_client.auth.auth_id_to_all_related_identities(auth_id)
         except:
             ids = []
         for i, el in enumerate(ids):
             if el['id_type'] == 'SMB_SID':
                 try:
-                    user_details = cli.ad.sid_to_ad_account(el['id_value'])
+                    user_details = rest_client.ad.sid_to_ad_account(el['id_value'])
                     if 'group' in user_details['classes']:
                         continue
-                    user = 'AD:' + user_details['name']
+                    user = f'AD:{user_details["name"]}'
                 except:
                     continue
-        if user == "":
+        if user == None:
             try:
-                user = "NFS:%s (id:%s)" % (pwd.getpwuid(int(owner_value)).pw_name, owner_value)
+                pw_name = pwd.getpwuid(int(owner_value)).pw_name
+                user = f'NFS:{pw_name} (id:{owner_value})'
             except:
                 pass
     elif owner_type == 'LOCAL_USER':
-        user = "LOCAL:%s" % owner_value
-    if user == "":
-        user = "%s:%s" % (owner_type, owner_value)
+        user = f'LOCAL:{owner_value}'
+
+    if user == None:
+        user = f'{owner_type}:{owner_value}'
     return user
 
-def translate_owner_to_owner_string(cli, auth_id, owner_type, owner_value):
-    return format_owner(cli, auth_id, owner_type, owner_value)
 
 seen = {}
 def get_file_attrs(x):

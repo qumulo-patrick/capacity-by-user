@@ -4,6 +4,7 @@ import unittest
 
 from multiprocessing.pool import ThreadPool
 from parameterized import parameterized
+from typing import Any, Mapping, Sequence
 from unittest.mock import MagicMock, patch
 
 from capacity_by_user import (
@@ -12,6 +13,7 @@ from capacity_by_user import (
     get_samples,
     parse_args,
     pretty_print_capacity,
+    translate_owner_to_owner_string,
 )
 
 
@@ -90,6 +92,9 @@ class ArgparseTest(unittest.TestCase):
 
 
 class HelperTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_client = MagicMock()
+
     @parameterized.expand([
         [2 ** 0, 'b'],
         [2 ** 10, 'K'],
@@ -118,6 +123,99 @@ class HelperTest(unittest.TestCase):
         mock_worker.assert_called_with(
                 WorkerArgs(credentials, path, samples / concurrency))
         self.assertEqual(result, concurrency)
+
+    def create_mock_ad_client(self, return_value: Mapping[str, Any]) -> None:
+        self.mock_client.ad = MagicMock()
+        self.mock_client.ad.sid_to_ad_account = MagicMock(
+                return_value=return_value)
+
+    def create_mock_auth_client(self, return_value: Mapping[str, Any]) -> None:
+        self.mock_client.auth = MagicMock()
+        self.mock_client.auth.auth_id_to_all_related_identities = MagicMock(
+                return_value=return_value)
+
+    def test_translate_owner_to_owner_string_happy_path_smb(self) -> None:
+        self.owner_value = '1234567'
+        return_value = {
+            'name': 'cli-user-details-name',
+            'classes': []
+        }
+        self.create_mock_ad_client(return_value)
+
+        result = translate_owner_to_owner_string(
+            self.mock_client,
+            'unused-auth-id',
+            'SMB_SID',
+            self.owner_value
+        )
+
+        self.mock_client.ad.sid_to_ad_account.assert_called_once()
+        self.mock_client.ad.sid_to_ad_account.assert_called_with(
+                self.owner_value)
+        self.assertEqual(result, 'AD:cli-user-details-name')
+
+    @parameterized.expand([
+        [[], 'AD:cli-user-details-name'],
+        [['group'], 'NFS:daemon (id:1)'],
+    ])
+    def test_translate_owner_to_owner_string_happy_path_nfs_to_smb(
+        self,
+        classes: Sequence[str],
+        expected_str: str
+    ) -> None:
+        self.owner_value = '1'
+        ad_return_value = {
+            'name': 'cli-user-details-name',
+            'classes': classes
+        }
+        self.create_mock_ad_client(ad_return_value)
+
+        auth_return_value = [
+            {
+                'id_type': 'SMB_SID',
+                'id_value': self.owner_value
+            }
+        ]
+        self.create_mock_auth_client(auth_return_value)
+
+        auth_id = 'auth-id'
+        result = translate_owner_to_owner_string(
+                self.mock_client, auth_id, 'NFS_UID', self.owner_value)
+
+        self.mock_client.auth.auth_id_to_all_related_identities.assert_called_once()
+        self.mock_client.auth.auth_id_to_all_related_identities.assert_called_with(auth_id)
+        self.mock_client.ad.sid_to_ad_account.assert_called_once()
+        self.mock_client.ad.sid_to_ad_account.assert_called_with(
+                self.owner_value)
+        self.assertEqual(result, expected_str)
+
+    def test_translate_owner_to_owner_string_local_user_happy_path(
+        self,
+    ) -> None:
+        owner_value = '1234'
+        result = translate_owner_to_owner_string(
+                self.mock_client, 'unused-auth-id', 'LOCAL_USER', owner_value)
+
+        self.assertEqual(result, f'LOCAL:{owner_value}')
+
+    @parameterized.expand([
+        ['SMB_SID', 'smb-owner-value'],
+        ['NFS_UID', 'nfs-owner-value'],
+        ['FAKE_ID', 'fake-owner-value'],
+    ])
+    def test_translate_owner_to_owner_string_formats_same_for_all_on_error(
+        self,
+        owner_type: str,
+        owner_value: str
+    ) -> None:
+        # Cause errors whenever querying the cluster from the RestClient
+        self.mock_client.ad.sid_to_ad_account.side_effect = Exception()
+        self.mock_client.auth.auth_id_to_all_related_identities.side_effect = Exception()
+
+        result = translate_owner_to_owner_string(
+                self.mock_client, 'unused-auth-id', owner_type, owner_value)
+
+        self.assertEqual(result, f'{owner_type}:{owner_value}')
 
 
 if __name__ == '__main__':
