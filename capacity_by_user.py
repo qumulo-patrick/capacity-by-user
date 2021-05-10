@@ -190,37 +190,35 @@ def translate_owner_to_owner_string(
 
 
 seen = {}
-def get_file_attrs(x):
-    credentials, paths = x
-    client = RestClient(credentials["cluster"], credentials["port"])
-    client.login(credentials["user"], credentials["password"])
+def get_file_attrs(
+    rest_client: RestClient,
+    paths: Sequence[str]
+) -> Sequence[str]:
     result = []
     for path in paths:
-        if seen.has_key(path):
+        if path in seen:
             result += [seen[path]]
             continue
-        attrs = client.fs.get_file_attr(path)
-        str_owner = translate_owner_to_owner_string(client
-                                                          , attrs['owner']
-                                                          , attrs['owner_details']['id_type']
-                                                          , attrs['owner_details']['id_value'])
+        attrs = rest_client.fs.get_file_attr(path)
+        str_owner = translate_owner_to_owner_string(
+            rest_client,
+            attrs['owner'],
+            attrs['owner_details']['id_type'],
+            attrs['owner_details']['id_value']
+        )
         seen[path] = str_owner
         result.append(str_owner)
     return result
 
-def get_owner_vec(pool, credentials, samples, args):
+
+def get_owner_vec(pool, rest_client, samples, args):
     file_ids = [s["id"] for s in samples]
-    sublists = [(credentials, file_ids[i:i+100]) for i in range(0, args.samples, 100)]
-    owner_id_sublists = pool.map(get_file_attrs, sublists)
+    sublists = [(rest_client.clone(), file_ids[i:i+100]) for i in range(0, args.samples, 100)]
+    owner_id_sublists = pool.starmap(get_file_attrs, sublists)
     return sum(owner_id_sublists, [])
 
 def main(args):
-    credentials = {"user" : args.user,
-                   "password" : args.password,
-                   "cluster" : args.cluster,
-                   "port" : args.port}
-    # XXX: We need both credential objects until get_file_attrs is converted
-    credentials_obj = Credentials(
+    credentials = Credentials(
             args.user, args.password, args.cluster, args.port)
 
     if args.allow_self_signed_server:
@@ -244,10 +242,10 @@ def main(args):
 
     # First build a vector of all samples...
     samples = get_samples(
-            pool, credentials_obj, args.samples, args.concurrency, args.path)
+            pool, credentials, args.samples, args.concurrency, args.path)
 
     # Then get a corresponding vector of owner strings
-    owner_vec = get_owner_vec(pool, credentials, samples, args)
+    owner_vec = get_owner_vec(pool, rest_client, samples, args)
 
     owners = {}
     directories = {}

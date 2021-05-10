@@ -5,16 +5,18 @@ import unittest
 from multiprocessing.pool import ThreadPool
 from parameterized import parameterized
 from typing import Any, Mapping, Sequence
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from capacity_by_user import (
     Credentials,
     WorkerArgs,
+    get_file_attrs,
     get_samples,
     parse_args,
     pretty_print_capacity,
     translate_owner_to_owner_string,
 )
+from qumulo.rest_client import RestClient
 
 
 class ArgparseTest(unittest.TestCase):
@@ -217,6 +219,57 @@ class HelperTest(unittest.TestCase):
 
         self.assertEqual(result, f'{owner_type}:{owner_value}')
 
+    def create_mock_fs_client(self, return_value: Mapping[str, Any]) -> None:
+        self.mock_client.fs = MagicMock()
+        self.mock_client.fs.get_file_attr = MagicMock(
+                return_value=return_value)
+
+    def test_get_file_attrs_aggregates_results_from_client(self) -> None:
+        owner_id = '1234567'
+        return_value = {
+            'owner': 'my_user',
+            'owner_details': {
+                'id_type': 'LOCAL_USER',
+                'id_value': owner_id,
+            }
+        }
+        self.create_mock_fs_client(return_value)
+
+        paths = ['/dir1', '/dir2', '/dir3']
+        results = get_file_attrs(self.mock_client, paths)
+
+        self.assertEqual(len(paths), len(results))
+        self.mock_client.fs.get_file_attr.assert_has_calls(
+                [call(path) for path in paths])
+
+        for result in results:
+            self.assertEqual(f'LOCAL:{owner_id}', result)
+
+    def test_get_file_remembers_results_from_previous_calls(self) -> None:
+        owner_id = '1234567'
+        return_value = {
+            'owner': 'my_user',
+            'owner_details': {
+                'id_type': 'LOCAL_USER',
+                'id_value': owner_id,
+            }
+        }
+        self.create_mock_fs_client(return_value)
+
+        # Get a single path (which we expect it to remember)
+        get_file_attrs(self.mock_client, ['/file1'])
+
+        # Reset the Mock and call again
+        self.mock_client.reset_mock()
+        paths = ['/file1', '/file2', '/file3']
+        results = get_file_attrs(self.mock_client, paths)
+
+        self.assertEqual(len(paths), len(results))
+        self.mock_client.fs.get_file_attr.assert_has_calls(
+                [call(path) for path in paths[1:]])
+
+        for result in results:
+            self.assertEqual(f'LOCAL:{owner_id}', result)
 
 if __name__ == '__main__':
     unittest.main()
