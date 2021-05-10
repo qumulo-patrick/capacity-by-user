@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import itertools
 import os
 import pwd
 import sys
@@ -139,12 +140,15 @@ def get_samples(
     samples: int,
     concurrency: int,
     path: str
-) -> int:
+) -> Sequence[Mapping[str, Any]]:
     samples_to_request = samples / concurrency
     request = WorkerArgs(credentials, path, samples_to_request)
     requests = [request] * concurrency
 
-    return sum(pool.map(get_samples_worker, requests))
+    tiered_results = pool.map(get_samples_worker, requests)
+
+    # Flatten worker output into a single list
+    return list(itertools.chain.from_iterable(tiered_results))
 
 
 def translate_owner_to_owner_string(
@@ -211,11 +215,23 @@ def get_file_attrs(
     return result
 
 
-def get_owner_vec(pool, rest_client, samples, args):
-    file_ids = [s["id"] for s in samples]
-    sublists = [(rest_client.clone(), file_ids[i:i+100]) for i in range(0, args.samples, 100)]
-    owner_id_sublists = pool.starmap(get_file_attrs, sublists)
-    return sum(owner_id_sublists, [])
+def get_owner_vec(
+    pool: Pool,
+    rest_client: RestClient,
+    samples: Sequence[Mapping[str, Any]],
+    num_samples: int
+) -> Sequence[str]:
+    file_ids = [s['id'] for s in samples]
+    sublists = [
+        (rest_client.clone(), file_ids[i:i+100])
+        for i in range(0, num_samples, 100)
+    ]
+
+    tiered_results = pool.starmap(get_file_attrs, sublists)
+
+    # Flatten worker output into a single list
+    return list(itertools.chain.from_iterable(tiered_results))
+
 
 def main(args):
     credentials = Credentials(
@@ -245,7 +261,7 @@ def main(args):
             pool, credentials, args.samples, args.concurrency, args.path)
 
     # Then get a corresponding vector of owner strings
-    owner_vec = get_owner_vec(pool, rest_client, samples, args)
+    owner_vec = get_owner_vec(pool, rest_client, samples, args.samples)
 
     owners = {}
     directories = {}

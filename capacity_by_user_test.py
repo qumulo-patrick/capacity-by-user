@@ -11,6 +11,7 @@ from capacity_by_user import (
     Credentials,
     WorkerArgs,
     get_file_attrs,
+    get_owner_vec,
     get_samples,
     parse_args,
     pretty_print_capacity,
@@ -111,7 +112,7 @@ class HelperTest(unittest.TestCase):
 
     @patch('capacity_by_user.get_samples_worker')
     def test_get_samples_sums_data_from_workers(self, mock_worker) -> None:
-        mock_worker.return_value = 1
+        mock_worker.return_value = [1]
 
         concurrency = 5
         pool = ThreadPool(concurrency)
@@ -124,7 +125,7 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(mock_worker.call_count, concurrency)
         mock_worker.assert_called_with(
                 WorkerArgs(credentials, path, samples / concurrency))
-        self.assertEqual(result, concurrency)
+        self.assertEqual(result, [1, 1, 1, 1, 1])
 
     def create_mock_ad_client(self, return_value: Mapping[str, Any]) -> None:
         self.mock_client.ad = MagicMock()
@@ -270,6 +271,42 @@ class HelperTest(unittest.TestCase):
 
         for result in results:
             self.assertEqual(f'LOCAL:{owner_id}', result)
+
+    @patch('capacity_by_user.get_file_attrs')
+    def test_get_owner_vec_fans_out_to_workers(
+        self,
+        getter_mock: MagicMock
+    ) -> None:
+        concurrency = 5
+        pool = ThreadPool(concurrency)
+        num_samples = 200
+        samples = [{'id': i} for i in range(num_samples)]
+
+        # Just return the samples instead of looking up their attributes
+        getter_mock.side_effect = lambda rest_client, samples: samples
+
+        results = get_owner_vec(pool, self.mock_client, samples, num_samples)
+
+        self.assertEqual(getter_mock.call_count, 2)
+        self.assertEqual([i for i in range(num_samples)], results)
+
+    @patch('capacity_by_user.get_file_attrs')
+    def test_get_owner_vec_only_requests_a_max_of_num_samples(
+        self,
+        getter_mock: MagicMock
+    ) -> None:
+        concurrency = 5
+        pool = ThreadPool(concurrency)
+        num_samples = 200
+        samples = [{'id': i} for i in range(num_samples + 200)]
+
+        # Just return the samples instead of looking up their attributes
+        getter_mock.side_effect = lambda rest_client, samples: samples
+
+        results = get_owner_vec(pool, self.mock_client, samples, num_samples)
+
+        self.assertEqual(getter_mock.call_count, 2)
+        self.assertEqual([i for i in range(num_samples)], results)
 
 if __name__ == '__main__':
     unittest.main()
