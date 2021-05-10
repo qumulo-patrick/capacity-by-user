@@ -147,17 +147,6 @@ def get_samples(
     return sum(pool.map(get_samples_worker, requests))
 
 
-class memoize:
-  def __init__(self, function):
-    self.function = function
-    self.memoized = {}
-  def __call__(self, *args):
-    try:
-      return self.memoized[args]
-    except KeyError:
-      self.memoized[args] = self.function(*args)
-      return self.memoized[args]
-
 def format_owner(cli, auth_id, owner_type, owner_value):
     user = ""
     if owner_type == 'SMB_SID':
@@ -191,7 +180,6 @@ def format_owner(cli, auth_id, owner_type, owner_value):
         user = "%s:%s" % (owner_type, owner_value)
     return user
 
-@memoize
 def translate_owner_to_owner_string(cli, auth_id, owner_type, owner_value):
     return format_owner(cli, auth_id, owner_type, owner_value)
 
