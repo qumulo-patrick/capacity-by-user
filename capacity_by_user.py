@@ -107,7 +107,7 @@ def pretty_print_capacity(capacity: int) -> str:
 
     for starting_point, unit in zip(starting_points, units):
         if capacity >= starting_point:
-            return f'{capacity / float(starting_point): .2f}{unit}'
+            return f'{capacity / float(starting_point):.2f}{unit}'
 
     return '0'
 
@@ -233,7 +233,47 @@ def get_owner_vec(
     return list(itertools.chain.from_iterable(tiered_results))
 
 
-def main(args):
+def format_capacity(
+    sample_str: str,
+    num_samples: int,
+    total_capacity_used: float,
+    dollars_per_terabyte: float,
+    use_confidence_interval: bool
+) -> str:
+    sample = float(sample_str)
+    mean = sample / num_samples
+    stddev = (((1 - mean) ** 2 * sample +
+                (mean ** 2) * (num_samples - sample)) / num_samples) ** (1/2.)
+    confidence =  1.96 * stddev / (num_samples ** (1/2.))
+
+    bytes_per_terabyte = 1000. ** 4
+    if dollars_per_terabyte != None:
+        def to_dollars(adjust: float) -> float:
+            return (
+                (mean + adjust)
+                * total_capacity_used
+                / bytes_per_terabyte
+                * dollars_per_terabyte
+            )
+        if use_confidence_interval:
+            low = to_dollars(-confidence)
+            high = to_dollars(confidence)
+            return f'[${low:.02f} - ${high:.02f}]/month'
+        else:
+            return f'${to_dollars(0):.02f}/month'
+    else:
+        if use_confidence_interval:
+            low = (mean - confidence) * total_capacity_used
+            high = (mean + confidence) * total_capacity_used
+            low_str = pretty_print_capacity(low)
+            high_str = pretty_print_capacity(high)
+            return f'[{low_str} - {high_str}]'
+        else:
+            return f'{pretty_print_capacity((mean) * total_capacity_used)}'
+
+
+def main(args: Sequence[str]):
+    args = parse_args(args)
     credentials = Credentials(
             args.user, args.password, args.cluster, args.port)
 
@@ -271,35 +311,12 @@ def main(args):
         owners.setdefault(owner, SampleTreeNode(""))
         owners[owner].insert(s["name"], 1)
 
-    def format_capacity(samples):
-        mean = float(samples) / args.samples
-        stddev = (((1 - mean) ** 2 * samples +
-                   (mean ** 2) * (args.samples - samples)) / args.samples) ** (1/2.)
-        confidence =  1.96 * stddev / (args.samples ** (1/2.))
-
-        bytes_per_terabyte = 1000. ** 4
-        if args.dollars_per_terabyte != None:
-            def to_dollars(adjust):
-                return (
-                    (mean + adjust)
-                    * total_capacity_used
-                    / bytes_per_terabyte
-                    * args.dollars_per_terabyte
-                )
-            if args.confidence_interval:
-                return "[$%0.02f-$%0.02f]/month" % (to_dollars(-confidence),
-                                                    to_dollars(confidence))
-            else:
-                return "$%0.02f/month" % (to_dollars(0),)
-        else:
-            if args.confidence_interval:
-                return "[%s-%s]" % (
-                    pretty_print_capacity((mean - confidence) * total_capacity_used),
-                    pretty_print_capacity((mean + confidence) * total_capacity_used))
-            else:
-                return "%s" % pretty_print_capacity((mean) * total_capacity_used)
-
-    print("Total: %s" % (format_capacity(args.samples)))
+    print("Total: %s" % (format_capacity(
+        args.samples,
+        args.samples,
+        args.dollars_per_terabyte,
+        args.confidence_interval
+    )))
     sort_fn = lambda x, y: y[1].sum_samples - x[1].sum_samples
     sorted_owners = sorted(owners.items(), ket=cmp_to_key(sort_fn))
 
@@ -307,13 +324,35 @@ def main(args):
     for name, tree in sorted_owners:
         print("Owner %s (~%0.1f%%/%s)" % (
             name, tree.sum_samples / float(args.samples) * 100,
-            format_capacity(tree.sum_samples)))
+            format_capacity(
+                tree.sum_samples,
+                args.samples,
+                args.dollars_per_terabyte,
+                args.confidence_interval
+            )))
         tree.prune_until(max_leaves=args.max_leaves,
                          min_samples=args.min_samples)
         if "" in tree.children:
-            print(tree.children[""].__str__("    ", lambda x: format_capacity(x)))
+            print(tree.children[""].__str__(
+                "    ",
+                lambda x: format_capacity(
+                    x,
+                    args.samples,
+                    args.dollars_per_terabyte,
+                    args.confidence_interval
+                )
+            ))
         else:
-            print(tree.__str__("    ", lambda x: format_capacity(x)))
+            print(tree.__str__(
+                "    ",
+                lambda x: format_capacity(
+                    x,
+                    args.samples,
+                    args.dollars_per_terabyte,
+                    args.confidence_interval
+                )
+            ))
+
 
 if __name__ == '__main__':
-    main(parse_args(sys.argv[1:]))
+    main(sys.argv[1:])

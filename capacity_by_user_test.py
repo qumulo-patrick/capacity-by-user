@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, call, patch
 from capacity_by_user import (
     Credentials,
     WorkerArgs,
+    format_capacity,
     get_file_attrs,
     get_owner_vec,
     get_samples,
@@ -307,6 +308,27 @@ class HelperTest(unittest.TestCase):
 
         self.assertEqual(getter_mock.call_count, 2)
         self.assertEqual([i for i in range(num_samples)], results)
+
+    @parameterized.expand([
+        [None, False, '60.78G'],
+        [256., False, '$16.71/month'],
+        [None, True, '[60.70G - 60.85G]'],
+        [256., True, '[$16.69 - $16.73]/month']
+    ])
+    def test_format_capacity(
+        self,
+        use_dollars_per_terabyte: float,
+        use_confidence_interval: bool,
+        expected_output: str
+    ) -> None:
+        result = format_capacity(
+            '123456.789',
+            130000,
+            4096 * (2 ** 24),
+            use_dollars_per_terabyte,
+            use_confidence_interval
+        )
+        self.assertEqual(expected_output, result)
 
 if __name__ == '__main__':
     unittest.main()
