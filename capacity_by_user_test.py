@@ -204,9 +204,9 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(result, f'LOCAL:{owner_value}')
 
     @parameterized.expand([
-        ['SMB_SID', '5'],
-        ['NFS_UID', '6'],
-        ['FAKE_ID', '7'],
+        ['SMB_SID', '12345'],
+        ['NFS_UID', '24680'],
+        ['FAKE_ID', '13579'],
     ])
     def test_translate_owner_to_owner_string_formats_same_for_all_on_error(
         self,
