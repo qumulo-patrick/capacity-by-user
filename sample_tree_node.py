@@ -1,5 +1,6 @@
 import heapq
 
+from operator import attrgetter
 from typing import Callable, Generator, Sequence
 
 
@@ -21,7 +22,8 @@ class SampleTreeNode:
         if not components:
             self.samples += samples
         else:
-            self.children.setdefault(components[0], SampleTreeNode(components[0], self))
+            self.children.setdefault(
+                    components[0], SampleTreeNode(components[0], self))
             self.children[components[0]]._insert(components[1:], samples)
         self.sum_samples += samples
 
@@ -65,7 +67,8 @@ class SampleTreeNode:
             result += "(%s)" % (format_samples(self.sum_samples),)
 
         next_indent = indent + (is_last and "    " or "|   ")
-        sorted_children = sorted(self.children.values(), key=attrgetter('name'))
+        sorted_children = sorted(
+                self.children.values(), key=attrgetter('name'))
         for child in sorted_children[:-1]:
             result += "\n" + child.__str__(
                 next_indent, format_samples, False)
@@ -74,4 +77,3 @@ class SampleTreeNode:
                 next_indent, format_samples, True)
 
         return result
-

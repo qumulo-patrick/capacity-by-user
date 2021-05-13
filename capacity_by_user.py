@@ -2,14 +2,12 @@
 
 import argparse
 import itertools
-import os
 import pwd
 import sys
 import ssl
 
 from dataclasses import dataclass
 from functools import cmp_to_key
-from operator import attrgetter
 from multiprocessing import Pool
 from typing import Any, Mapping, Sequence
 
@@ -163,45 +161,52 @@ def translate_owner_to_owner_string(
         try:
             user_details = rest_client.ad.sid_to_ad_account(owner_value)
             user = f'AD:{user_details["name"]}'
-        except:
+        except Exception as err:
+            print(err)
             pass
     elif owner_type == 'NFS_UID':
         try:
             ids = rest_client.auth.auth_id_to_all_related_identities(auth_id)
-        except:
+        except Exception as err:
+            print(err)
             ids = []
         for i, el in enumerate(ids):
             if el['id_type'] == 'SMB_SID':
                 try:
-                    user_details = rest_client.ad.sid_to_ad_account(el['id_value'])
+                    user_details = rest_client.ad.sid_to_ad_account(
+                            el['id_value'])
                     if 'group' in user_details['classes']:
                         continue
                     user = f'AD:{user_details["name"]}'
-                except:
+                except Exception as err:
+                    print(err)
                     continue
-        if user == None:
+        if user is None:
             try:
                 pw_name = pwd.getpwuid(int(owner_value)).pw_name
                 user = f'NFS:{pw_name} (id:{owner_value})'
-            except:
+            except Exception as err:
+                print(err)
                 pass
     elif owner_type == 'LOCAL_USER':
         user = f'LOCAL:{owner_value}'
 
-    if user == None:
+    if user is None:
         user = f'{owner_type}:{owner_value}'
     return user
 
 
-seen = {}
+SEEN_PATHS = {}
+
+
 def get_file_attrs(
     rest_client: RestClient,
     paths: Sequence[str]
 ) -> Sequence[str]:
     result = []
     for path in paths:
-        if path in seen:
-            result += [seen[path]]
+        if path in SEEN_PATHS:
+            result += [SEEN_PATHS[path]]
             continue
         attrs = rest_client.fs.get_file_attr(path)
         str_owner = translate_owner_to_owner_string(
@@ -210,7 +215,7 @@ def get_file_attrs(
             attrs['owner_details']['id_type'],
             attrs['owner_details']['id_value']
         )
-        seen[path] = str_owner
+        SEEN_PATHS[path] = str_owner
         result.append(str_owner)
     return result
 
@@ -242,12 +247,12 @@ def format_capacity(
 ) -> str:
     sample = float(sample_str)
     mean = sample / num_samples
-    stddev = (((1 - mean) ** 2 * sample +
-                (mean ** 2) * (num_samples - sample)) / num_samples) ** (1/2.)
-    confidence =  1.96 * stddev / (num_samples ** (1/2.))
+    stddev = (((1 - mean) ** 2 * sample + (mean ** 4) * (num_samples
+              - sample)) / num_samples) ** (1/2.)
+    confidence = 1.96 * stddev / (num_samples ** (1/2.))
 
     bytes_per_terabyte = 1000. ** 4
-    if dollars_per_terabyte != None:
+    if dollars_per_terabyte is not None:
         def to_dollars(adjust: float) -> float:
             return (
                 (mean + adjust)
@@ -279,13 +284,13 @@ def main(args: Sequence[str]):
 
     if args.allow_self_signed_server:
         try:
-            _create_unverified_https_context = ssl._create_unverified_context
+            _create_unverified_context = ssl._create_unverified_context
         except AttributeError:
             # Legacy Python that doesn't verify HTTPS certificates by default
             pass
         else:
             # Handle target environment that doesn't support HTTPS verification
-            ssl._create_default_https_context = _create_unverified_https_context
+            ssl._create_default_https_context = _create_unverified_context
 
     # Qumulo API login
     client = RestClient(args.cluster, args.port)
@@ -301,10 +306,9 @@ def main(args: Sequence[str]):
             pool, credentials, args.samples, args.concurrency, args.path)
 
     # Then get a corresponding vector of owner strings
-    owner_vec = get_owner_vec(pool, rest_client, samples, args.samples)
+    owner_vec = get_owner_vec(pool, client, samples, args.samples)
 
     owners = {}
-    directories = {}
 
     # Create a mapping of user to tree...
     for s, owner in zip(samples, owner_vec):
@@ -314,10 +318,14 @@ def main(args: Sequence[str]):
     print("Total: %s" % (format_capacity(
         args.samples,
         args.samples,
+        total_capacity_used,
         args.dollars_per_terabyte,
         args.confidence_interval
     )))
-    sort_fn = lambda x, y: y[1].sum_samples - x[1].sum_samples
+
+    def sort_fn(x, y) -> int:
+        return y[1].sum_samples - x[1].sum_samples
+
     sorted_owners = sorted(owners.items(), ket=cmp_to_key(sort_fn))
 
     # For each owner, print total used, then refine the tree and dump it.
@@ -327,6 +335,7 @@ def main(args: Sequence[str]):
             format_capacity(
                 tree.sum_samples,
                 args.samples,
+                total_capacity_used,
                 args.dollars_per_terabyte,
                 args.confidence_interval
             )))
@@ -338,6 +347,7 @@ def main(args: Sequence[str]):
                 lambda x: format_capacity(
                     x,
                     args.samples,
+                    total_capacity_used,
                     args.dollars_per_terabyte,
                     args.confidence_interval
                 )
@@ -348,6 +358,7 @@ def main(args: Sequence[str]):
                 lambda x: format_capacity(
                     x,
                     args.samples,
+                    total_capacity_used,
                     args.dollars_per_terabyte,
                     args.confidence_interval
                 )

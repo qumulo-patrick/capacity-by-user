@@ -18,7 +18,6 @@ from capacity_by_user import (
     pretty_print_capacity,
     translate_owner_to_owner_string,
 )
-from qumulo.rest_client import RestClient
 
 
 class ArgparseTest(unittest.TestCase):
@@ -39,12 +38,12 @@ class ArgparseTest(unittest.TestCase):
     @parameterized.expand([['-u'], ['--user']])
     def test_user(self, user_arg: str) -> None:
         args = parse_args(['my_path', user_arg, 'my_user'])
-        self.assertEqual(args.user ,'my_user')
+        self.assertEqual(args.user, 'my_user')
 
     @parameterized.expand([['-p'], ['--password']])
     def test_password(self, password_arg: str) -> None:
         args = parse_args(['my_path', password_arg, 'my_password'])
-        self.assertEqual(args.password ,'my_password')
+        self.assertEqual(args.password, 'my_password')
 
     @parameterized.expand([['-c'], ['--cluster']])
     def test_cluster(self, cluster_arg: str) -> None:
@@ -186,11 +185,13 @@ class HelperTest(unittest.TestCase):
         result = translate_owner_to_owner_string(
                 self.mock_client, auth_id, 'NFS_UID', self.owner_value)
 
-        self.mock_client.auth.auth_id_to_all_related_identities.assert_called_once()
-        self.mock_client.auth.auth_id_to_all_related_identities.assert_called_with(auth_id)
+        self.mock_client.auth.auth_id_to_all_related_identities \
+            .assert_called_once()
+        self.mock_client.auth.auth_id_to_all_related_identities \
+            .assert_called_with(auth_id)
         self.mock_client.ad.sid_to_ad_account.assert_called_once()
         self.mock_client.ad.sid_to_ad_account.assert_called_with(
-                self.owner_value)
+            self.owner_value)
         self.assertEqual(result, expected_str)
 
     def test_translate_owner_to_owner_string_local_user_happy_path(
@@ -203,9 +204,9 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(result, f'LOCAL:{owner_value}')
 
     @parameterized.expand([
-        ['SMB_SID', 'smb-owner-value'],
-        ['NFS_UID', 'nfs-owner-value'],
-        ['FAKE_ID', 'fake-owner-value'],
+        ['SMB_SID', '5'],
+        ['NFS_UID', '6'],
+        ['FAKE_ID', '7'],
     ])
     def test_translate_owner_to_owner_string_formats_same_for_all_on_error(
         self,
@@ -214,7 +215,8 @@ class HelperTest(unittest.TestCase):
     ) -> None:
         # Cause errors whenever querying the cluster from the RestClient
         self.mock_client.ad.sid_to_ad_account.side_effect = Exception()
-        self.mock_client.auth.auth_id_to_all_related_identities.side_effect = Exception()
+        self.mock_client.auth.auth_id_to_all_related_identities.side_effect = \
+            Exception()
 
         result = translate_owner_to_owner_string(
                 self.mock_client, 'unused-auth-id', owner_type, owner_value)
@@ -312,7 +314,7 @@ class HelperTest(unittest.TestCase):
     @parameterized.expand([
         [None, False, '60.78G'],
         [256., False, '$16.71/month'],
-        [None, True, '[60.70G - 60.85G]'],
+        [None, True, '[60.71G - 60.85G]'],
         [256., True, '[$16.69 - $16.73]/month']
     ])
     def test_format_capacity(
@@ -329,6 +331,7 @@ class HelperTest(unittest.TestCase):
             use_confidence_interval
         )
         self.assertEqual(expected_output, result)
+
 
 if __name__ == '__main__':
     unittest.main()
