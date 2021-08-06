@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from qumulo.rest_client import RestClient
+import getpass
 import os
 import pwd
 import sys
@@ -18,6 +19,13 @@ class SampleTreeNode:
         self.name = name
         self.sum_samples = 0
         self.children = {}
+
+    def __lt__(self, other):
+        if self.parent is None and other.parent is not None:
+            return True
+        if self.parent is not None and other.parent is None:
+            return False
+        return (self.parent, self.samples, self.name, self.sum_samples) <  (other.parent, other.samples, other.name, other.sum_samples)
 
     def insert(self, name, samples):
         self.insert_internal(name.split("/"), samples)
@@ -86,7 +94,7 @@ def get_samples_worker(x):
     credentials, path, n = x
     client = RestClient(credentials["cluster"], credentials["port"])
     client.login(credentials["user"], credentials["password"])
-    return client.fs.get_file_samples(path=path, count=n, by_value="capacity")
+    return client.fs.get_file_samples(path=path, count=int(n), by_value="capacity")
 
 class memoize:
   def __init__(self, function):
@@ -138,20 +146,20 @@ def translate_owner_to_owner_string(cli, auth_id, owner_type, owner_value):
 
 seen = {}
 def get_file_attrs(x):
-    credentials, paths = x
+    credentials, file_ids = x
     client = RestClient(credentials["cluster"], credentials["port"])
     client.login(credentials["user"], credentials["password"])
     result = []
-    for path in paths:
-        if seen.has_key(path):
-            result += [seen[path]]
+    for file_id in file_ids:
+        if file_id in seen:
+            result += [seen[file_id]]
             continue
-        attrs = client.fs.get_file_attr(path)
+        attrs = client.fs.get_file_attr(file_id)
         str_owner = translate_owner_to_owner_string(client
-                                                          , attrs['owner']
-                                                          , attrs['owner_details']['id_type']
-                                                          , attrs['owner_details']['id_value'])
-        seen[path] = str_owner
+                                                   , attrs['owner']
+                                                   , attrs['owner_details']['id_type']
+                                                   , attrs['owner_details']['id_value'])
+        seen[file_id] = str_owner
         result.append(str_owner)
     return result
 
@@ -163,7 +171,7 @@ def get_samples(pool, credentials, args):
 
 def get_owner_vec(pool, credentials, samples, args):
     file_ids = [s["id"] for s in samples]
-    sublists = [(credentials, file_ids[i:i+100]) for i in xrange(0, args.samples, 100)]
+    sublists = [(credentials, file_ids[i:i+100]) for i in range(0, args.samples, 100)]
     owner_id_sublists = pool.map(get_file_attrs, sublists)
     return sum(owner_id_sublists, [])
 
@@ -172,6 +180,9 @@ def main(args):
                    "password" : args.password,
                    "cluster" : args.cluster,
                    "port" : args.port}
+
+    if credentials["password"] is None:
+        credentials["password"] = getpass.getpass(f"Password for {credentials['user']}: ")
 
     if args.allow_self_signed_server:
         try:
@@ -185,7 +196,7 @@ def main(args):
 
     # Qumulo API login
     client = RestClient(args.cluster, args.port)
-    client.login(args.user, args.password)
+    client.login(credentials["user"], credentials["password"])
 
     total_capacity_used = int(
         client.fs.read_dir_aggregates(args.path)['total_capacity'])
@@ -236,27 +247,28 @@ def main(args):
 
     print("Total: %s" % (format_capacity(args.samples)))
     sort_fn = lambda x, y: y[1].sum_samples - x[1].sum_samples
-    sorted_owners = sorted(owners.items(), ket=cmp_to_key(sort_fn))
+    sorted_owners = sorted(owners.items(), key=cmp_to_key(sort_fn))
 
     # For each owner, print total used, then refine the tree and dump it.
     for name, tree in sorted_owners:
         print("Owner %s (~%0.1f%%/%s)" % (
             name, tree.sum_samples / float(args.samples) * 100,
             format_capacity(tree.sum_samples)))
-        tree.prune_until(max_leaves=args.max_leaves,
-                         min_samples=args.min_samples)
-        if "" in tree.children:
-            print(tree.children[""].__str__("    ", lambda x: format_capacity(x)))
-        else:
-            print(tree.__str__("    ", lambda x: format_capacity(x)))
+        if args.fancy_output:  # XXX ezra: This didn't seem very useful to me.
+            tree.prune_until(max_leaves=args.max_leaves,
+                             min_samples=args.min_samples)
+            if "" in tree.children:
+                print(tree.children[""].__str__("    ", lambda x: format_capacity(x)))
+            else:
+                print(tree.__str__("    ", lambda x: format_capacity(x)))
 
 def process_command_line(args):
     parser = ArgumentParser()
-    parser.add_argument("-U", "--user", default="admin",
+    parser.add_argument("-U", "--user", required=True,
             help="The user to connect as (default: %(default)s)")
 
-    parser.add_argument("-P", "--password", default="admin",
-        help="The password to connect with (default: %(default)s)")
+    parser.add_argument("-P", "--password",
+        help="The password for the specified user. If not specified, you will be prompted later.")
 
     parser.add_argument("-C", "--cluster", default="qumulo",
         help="The hostname of the cluster to connect to (default: %(default)s)")
@@ -287,6 +299,9 @@ def process_command_line(args):
 
     parser.add_argument("-A", "--allow-self-signed-server", action="store_true",
         help="Silently connect to self-signed servers")
+
+    parser.add_argument("--fancy-output", action="store_true",
+        help="Organize each output item into a 'pruned' path tree")
 
     parser.add_argument("path", help="Filesystem path to sample")
 
