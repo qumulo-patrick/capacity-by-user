@@ -23,7 +23,7 @@ class SampleTreeNode:
             self.samples += samples
         else:
             self.children.setdefault(
-                    components[0], SampleTreeNode(components[0], self))
+                components[0], SampleTreeNode(components[0], self))
             self.children[components[0]]._insert(components[1:], samples)
         self.sum_samples += samples
 

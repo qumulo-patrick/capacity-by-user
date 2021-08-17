@@ -2,6 +2,7 @@
 
 import argparse
 import itertools
+import logging
 import pwd
 import sys
 import ssl
@@ -9,10 +10,12 @@ import ssl
 from dataclasses import dataclass
 from functools import cmp_to_key
 from multiprocessing import Pool
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, Set
 
 from qumulo.rest_client import RestClient
 from sample_tree_node import SampleTreeNode
+
+log = logging.getLogger(__name__)
 
 
 def parse_args(args: Sequence[str]) -> argparse.Namespace:
@@ -162,13 +165,13 @@ def translate_owner_to_owner_string(
             user_details = rest_client.ad.sid_to_ad_account(owner_value)
             user = f'AD:{user_details["name"]}'
         except Exception as err:
-            print(err)
+            log.exception(err)
             pass
     elif owner_type == 'NFS_UID':
         try:
             ids = rest_client.auth.auth_id_to_all_related_identities(auth_id)
         except Exception as err:
-            print(err)
+            log.exception(err)
             ids = []
         for i, el in enumerate(ids):
             if el['id_type'] == 'SMB_SID':
@@ -179,14 +182,14 @@ def translate_owner_to_owner_string(
                         continue
                     user = f'AD:{user_details["name"]}'
                 except Exception as err:
-                    print(err)
+                    log.exception(err)
                     continue
         if user is None:
             try:
                 pw_name = pwd.getpwuid(int(owner_value)).pw_name
                 user = f'NFS:{pw_name} (id:{owner_value})'
             except Exception as err:
-                print(err)
+                log.exception(err)
                 pass
     elif owner_type == 'LOCAL_USER':
         user = f'LOCAL:{owner_value}'
@@ -196,17 +199,15 @@ def translate_owner_to_owner_string(
     return user
 
 
-SEEN_PATHS = {}
-
-
 def get_file_attrs(
     rest_client: RestClient,
+    seen_paths: Set[str],
     paths: Sequence[str]
 ) -> Sequence[str]:
     result = []
     for path in paths:
-        if path in SEEN_PATHS:
-            result += [SEEN_PATHS[path]]
+        if path in seen_paths:
+            result += [seen_paths[path]]
             continue
         attrs = rest_client.fs.get_file_attr(path)
         str_owner = translate_owner_to_owner_string(
@@ -215,7 +216,7 @@ def get_file_attrs(
             attrs['owner_details']['id_type'],
             attrs['owner_details']['id_value']
         )
-        SEEN_PATHS[path] = str_owner
+        seen_paths[path] = str_owner
         result.append(str_owner)
     return result
 
@@ -227,12 +228,13 @@ def get_owner_vec(
     num_samples: int
 ) -> Sequence[str]:
     file_ids = [s['id'] for s in samples]
-    sublists = [
-        (rest_client.clone(), file_ids[i:i+100])
+    seen_paths = []
+
+    args = [
+        (rest_client.clone(), seen_paths, file_ids[i:i+100])
         for i in range(0, num_samples, 100)
     ]
-
-    tiered_results = pool.starmap(get_file_attrs, sublists)
+    tiered_results = pool.starmap(get_file_attrs, args)
 
     # Flatten worker output into a single list
     return list(itertools.chain.from_iterable(tiered_results))
@@ -247,7 +249,7 @@ def format_capacity(
 ) -> str:
     sample = float(sample_str)
     mean = sample / num_samples
-    stddev = (((1 - mean) ** 2 * sample + (mean ** 4) * (num_samples
+    stddev = (((1 - mean) ** 2 * sample + (mean ** 2) * (num_samples
               - sample)) / num_samples) ** (1/2.)
     confidence = 1.96 * stddev / (num_samples ** (1/2.))
 
@@ -280,7 +282,7 @@ def format_capacity(
 def main(args: Sequence[str]):
     args = parse_args(args)
     credentials = Credentials(
-            args.user, args.password, args.cluster, args.port)
+        args.user, args.password, args.cluster, args.port)
 
     if args.allow_self_signed_server:
         try:
@@ -303,7 +305,7 @@ def main(args: Sequence[str]):
 
     # First build a vector of all samples...
     samples = get_samples(
-            pool, credentials, args.samples, args.concurrency, args.path)
+        pool, credentials, args.samples, args.concurrency, args.path)
 
     # Then get a corresponding vector of owner strings
     owner_vec = get_owner_vec(pool, client, samples, args.samples)
@@ -324,6 +326,12 @@ def main(args: Sequence[str]):
     )))
 
     def sort_fn(x, y) -> int:
+        """
+        Sorts functions similar to C's strcmp() where:
+         - 0 denotes equality
+         - a positive number denotes y > x
+         - a negative number denotes y < x
+        """
         return y[1].sum_samples - x[1].sum_samples
 
     sorted_owners = sorted(owners.items(), ket=cmp_to_key(sort_fn))

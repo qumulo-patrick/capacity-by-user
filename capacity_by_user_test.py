@@ -239,8 +239,9 @@ class HelperTest(unittest.TestCase):
         }
         self.create_mock_fs_client(return_value)
 
+        _seen_paths = {}
         paths = ['/dir1', '/dir2', '/dir3']
-        results = get_file_attrs(self.mock_client, paths)
+        results = get_file_attrs(self.mock_client, _seen_paths, paths)
 
         self.assertEqual(len(paths), len(results))
         self.mock_client.fs.get_file_attr.assert_has_calls(
@@ -261,12 +262,14 @@ class HelperTest(unittest.TestCase):
         self.create_mock_fs_client(return_value)
 
         # Get a single path (which we expect it to remember)
-        get_file_attrs(self.mock_client, ['/file1'])
+        _seen_paths = {}
+        get_file_attrs(self.mock_client, _seen_paths, ['/file1'])
 
         # Reset the Mock and call again
         self.mock_client.reset_mock()
+        _seen_paths = {}
         paths = ['/file1', '/file2', '/file3']
-        results = get_file_attrs(self.mock_client, paths)
+        results = get_file_attrs(self.mock_client, _seen_paths, paths)
 
         self.assertEqual(len(paths), len(results))
         self.mock_client.fs.get_file_attr.assert_has_calls(
@@ -286,7 +289,9 @@ class HelperTest(unittest.TestCase):
         samples = [{'id': i} for i in range(num_samples)]
 
         # Just return the samples instead of looking up their attributes
-        getter_mock.side_effect = lambda rest_client, samples: samples
+        getter_mock.side_effect = (
+            lambda rest_client, seen_paths, samples: samples
+        )
 
         results = get_owner_vec(pool, self.mock_client, samples, num_samples)
 
@@ -304,7 +309,9 @@ class HelperTest(unittest.TestCase):
         samples = [{'id': i} for i in range(num_samples + 200)]
 
         # Just return the samples instead of looking up their attributes
-        getter_mock.side_effect = lambda rest_client, samples: samples
+        getter_mock.side_effect = (
+            lambda rest_client, seen_paths, samples: samples
+        )
 
         results = get_owner_vec(pool, self.mock_client, samples, num_samples)
 
@@ -314,7 +321,7 @@ class HelperTest(unittest.TestCase):
     @parameterized.expand([
         [None, False, '60.78G'],
         [256., False, '$16.71/month'],
-        [None, True, '[60.71G - 60.85G]'],
+        [None, True, '[60.70G - 60.85G]'],
         [256., True, '[$16.69 - $16.73]/month']
     ])
     def test_format_capacity(
